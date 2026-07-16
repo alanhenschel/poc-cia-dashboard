@@ -42,6 +42,18 @@ That means:
 To reset to the original seed data, clear this site's `localStorage` (DevTools → Application → Local
 Storage → delete the `cia-dashboards.mock.v1` key) and reload.
 
+## Live deployment
+
+Deployed to Vercel, password-protected: **https://frontend-lake-ten-46.vercel.app**
+
+No environment variables or backend are required — same mocked, in-browser data flow as Docker/local dev.
+The `localStorage` caveat above applies identically here: each visitor's data lives in their own browser.
+
+To redeploy after changes (from this directory):
+```bash
+npx vercel --prod
+```
+
 ## Local development (optional)
 
 ```bash

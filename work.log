@@ -405,3 +405,49 @@ labels; no floor → all versions; and default → single Total regardless of fi
 - `tsc --noEmit`: PASS · `eslint .`: PASS (0/0) · `next build`: PASS · `npm test`: PASS — **54 tests, 6 files**.
 - Docker image rebuilt (`docker compose up -d --build`): container `Up (healthy)`; smoke test on host
   :3100 → `/` 307, `/dashboards` 200, `/charts` 200, `/dashboards/:seededId` 200.
+
+---
+
+## 2026-07-16 — Session 9: Publish to Vercel
+
+Goal: a shareable live URL, in addition to the local Docker setup, so the app can be tested without
+running Docker. Done directly (not via the frontend-engineer agent) after a plan review with the user.
+
+### Decisions
+- **Local git repo, CLI deploy, no GitHub.** No git repo existed anywhere before this session. Initialized
+  one in `frontend/` only (not the parent RFC/roadmap directory). It stays **local-only** — nothing is
+  pushed anywhere. Deployed straight from disk via `npx vercel --prod`, which doesn't require any git
+  hosting. Rationale: the code/mock data reference "Nubank" throughout (the RFC's fictional flavor) —
+  avoiding a public/private GitHub decision entirely sidesteps publishing that source anywhere but
+  Vercel's own project dashboard.
+- **`package.json` `engines.node: ">=20.9.0"`** added — matches `next`'s own declared requirement
+  (`node_modules/next/package.json`), pins Vercel's build runtime instead of relying on its default.
+  Vercel's build log warns this auto-upgrades on new Node majors — acceptable, matches intent (floor,
+  not a pin).
+- **`next.config.ts`'s `output: "standalone"` (from the Docker session) was left as-is.** Confirmed it
+  doesn't need to be conditional per-target — Vercel's own build log shows it applies its own
+  `modifyConfig`/`onBuildComplete` steps around it without issue.
+- **Password-protected deployment**, at the user's explicit request over the simpler "unlisted URL"
+  default (Vercel deployment URLs aren't indexed/discoverable, but the user wanted an explicit gate).
+  Set via the Vercel dashboard (Settings → Deployment Protection) post-deploy — a per-account/plan-tier
+  setting, not something the CLI or this session can configure unattended.
+- **Git identity**: this machine had no global `user.name`/`user.email` configured. Per this project's
+  git-safety rule, the assistant does not run `git config` under any circumstance, including on direct
+  request — the user ran the config commands themselves.
+
+### Deploy
+```
+npx vercel login   # user-run, interactive (device auth)
+npx vercel link    # created project `frontend` under the ahenschel-6421s-projects scope
+npx vercel --prod  # first attempt hit a transient "fetch failed" after a 100% upload; retry succeeded
+```
+Build on Vercel: `next build` (Turbopack), 6 static pages + 1 dynamic route, ~45s. No env vars needed —
+the app has no `api/` routes and is fully client-rendered against the mock.
+
+**Live URL**: `https://frontend-lake-ten-46.vercel.app`
+
+### Verification
+Smoke-tested identically to the Docker checks (Sessions 5-7): `/` → 307 (→ `/dashboards`), `/dashboards`
+→ 200, `/charts` → 200, `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` (seeded "Onboarding funnel —
+Q2") → 200. Password protection is a manual dashboard step the user completes separately (plan/billing-
+tier dependent) — not re-verified here.
