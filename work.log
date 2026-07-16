@@ -1,0 +1,407 @@
+# CIA Dashboards — M2 Frontend — Work Log
+
+Source-of-truth docs: `../context.md` (RFC), `../roadmap.md` (Epic 9 = this scope).
+Every non-obvious decision, and every deviation from those two docs, is recorded here.
+
+---
+
+## 2026-07-15 — Session 1: Scaffold, stack, foundations
+
+### Scaffold decisions
+- **Framework: Next.js 16.2.10 (App Router, TypeScript, `src/` dir, `@/*` alias).** `create-next-app@latest`
+  resolved to Next 16 + React 19.2 + Tailwind v4. Roadmap Epic 9 says "the CIA frontend is already
+  Next.js (TypeScript), so this builds on that" and "latest App Router" — honored.
+- **Read the bundled Next 16 docs first** (`node_modules/next/dist/docs`) per the project's own
+  `AGENTS.md` warning. Key breaking changes that affect this build:
+  - `params`/`searchParams` are now **Promises** — dynamic route pages must `await props.params`.
+    Applied in `app/dashboards/[id]/page.tsx` (thin async server component → renders client view).
+  - Turbopack is the default dev/build bundler; `next lint` is removed (script is `eslint`). Left as-is.
+- **Design system: Tailwind v4 + shadcn/ui (radix-nova preset, neutral base).** Matches Epic 9's
+  "Tailwind CSS + shadcn/ui" line. shadcn CLI would not emit `form.tsx` (silent no-op on this
+  registry/preset), so `form.tsx` was written by hand using the project's unified `radix-ui`
+  import pattern (same one shadcn used for `label`/`button`). Not a deviation — same source component.
+- **react-grid-layout resolved to v2.2.3, a full rewrite of the v1 API.** This matters:
+  - No `WidthProvider` HOC anymore — use the `useContainerWidth()` hook (`width`, `containerRef`, `mounted`).
+  - Config is grouped: `gridConfig` (cols/rowHeight/margin), `dragConfig` (enabled/handle),
+    `resizeConfig` (enabled/handles). `onLayoutChange(layout)` returns `readonly LayoutItem[]`.
+  - Removed the stale `@types/react-grid-layout` (v1 types) — v2 ships its own `.d.ts`.
+  - The `{x,y,w,h}` `LayoutItem` shape still maps 1:1 onto RFC `Widget.position` (Epic 9 requirement).
+- **Other stack (all Epic 9-specified):** Recharts 3, TanStack Query 5, react-hook-form 7 + zod 4,
+  zustand 5, lucide-react, next-themes (light/dark/system), sonner, date-fns.
+
+### Architecture decisions
+- **Mock service layer isolation.** `src/services/mock/*` holds ALL mock internals (in-memory store,
+  seed, network simulation, widget-result engine). Public facades `dashboard.service.ts` /
+  `chart.service.ts` expose ONLY the HTTP contract shapes from the RFC. Swapping to a real
+  `cia-backend` = rewrite one facade file per service to `fetch`; delete `mock/`. No UI touches mock code.
+- **Server state = TanStack Query; UI state = Zustand.** Per house rules, server data never lives in
+  Zustand. Zustand holds only dashboard-editor UI state (edit mode, draft grid layout, active filters).
+
+### Component & data-flow decisions
+- **Two service facades only** (`dashboard.service.ts`, `chart.service.ts`) are the entire public
+  API surface; all mock internals live in `services/mock/*` (store, seed, network sim, result
+  engine, pagination, ids, config). Going live = rewrite the two facades to `fetch`, delete `mock/`.
+- **Widget-result state machine** lives in `mock/result-engine.ts` and drives the Epic 7 enum:
+  - `chart_unavailable` — data-driven: seeded soft-deleted chart (real soft-delete path).
+  - `filter_conflict`  — data-driven & filter-bar-triggerable: a chart pinned to country=MX vs a
+    dashboard filtered to BR. Change the country filter live and the state appears/clears.
+  - `stale` → `ok`     — time-driven via a compressed 30s freshness window + 4s revalidate window,
+    so stale-while-revalidate is observable on the 20s results poll.
+  - `rate_limited`     — seeded demo widget that recovers after Retry-After (12s); "Retry now" works.
+  - `forbidden`        — seeded demo widget (rare in practice; seeded so the state is renderable).
+  - `loading` / network-error — client-derived by TanStack Query, not wire payload.
+  The "Onboarding funnel — Q2" seed dashboard surfaces ALL of these at once (6 widgets).
+- **react-grid-layout v2 hook API**: `useContainerWidth()` + grouped `gridConfig`/`dragConfig`/
+  `resizeConfig`. Drag is restricted to the widget header handle so chart hover/tooltip still work.
+  Draft layout is held in the Zustand editor store; "Save layout" (or exiting edit mode while dirty)
+  persists via the batch `updateWidgetLayout` (one round trip = Epic 3 batch-write intent).
+- **Charts palette**: consulted the dataviz skill; series use its validated categorical palette
+  (light + dark steps) as CSS vars in globals.css, validated with the skill's script (light-mode
+  worst adjacent CVD ΔE 9.1 ≥ 8). Identity is never color-alone — legend + tooltip always present.
+- **Recharts renderer** branches on `visualization_type` (line/bar/area) though V1 data is `line`,
+  matching the backend's viz-type-branching intent (Epic 5) so new types need no re-architecture.
+- **Global filter** is direct controlled inputs (not RHF) with zod validation only on
+  `app_version_min` — RHF+zod is reserved for the Dashboard/Chart create-edit forms per Epic 9.
+  Filter changes re-run the results query immediately; an owner can "Save as default" (PATCH filters).
+
+### Deviations from Epic 9 / RFC (all minor, all justified)
+1. **Compressed 30s freshness window** instead of the RFC's minute-to-hour adaptive TTLs — the real
+   TTLs are invisible in a demo; server-side TTL semantics return with cia-backend. (mock/config.ts)
+2. **UUID v4** (crypto.randomUUID) instead of RFC's v7 — mock sorts by explicit `updated_at`, not id
+   time-ordering, so v4 suffices. (mock/ids.ts)
+3. **Dashboard delete uses a confirmation dialog.** The roadmap's "no confirmation" note applies to
+   *chart* soft-delete only; dashboard delete is hard + destructive, so a confirm step is warranted.
+   Chart delete is one-click soft-delete with no confirm, exactly as specified.
+4. **can_mutate = owner === principal** for both dashboards and charts. The RFC's `cia-analytics-admin`
+   super-owner bypass for dashboards is not modeled (no admin identity in a single-user mock); the
+   seam is `store.canMutate()` — add the admin check there when roles exist.
+5. **Search shipped in M2** (client-side, by name/owner/tag) — Epic 9 explicitly defaults search to
+   M2/M3, so this is in-scope, not scope creep.
+
+### Explicit stubs / TODO for the real backend
+- **List pagination**: the mock + hooks honor cursor/`next_cursor`/limit, but the list UIs render
+  page 1 only (no infinite scroll / "load more"). Volume is low (~250 DAU); wire useInfiniteQuery
+  when needed. `paginate()` already returns correct cursors.
+- **Auth/identity**: `lib/session.ts` hard-codes the mock principal. Swap `getCurrentUserId()` for the
+  Okta `cia-user` session when auth lands; components already read from this seam.
+- **cia-analytics-admin super-owner**: not modeled (see deviation 4).
+- **Single-widget refresh** (`/widgets/:wid/result`): only the batch results endpoint is consumed
+  (Epic 3 primary path); per-widget "Retry now" refetches the whole batch. Fine until the single
+  endpoint's ship decision is made (open in roadmap Epic 3).
+- **Change-log / versioning UI**: out of Epic 9 scope (backend read-model, M1) — not built.
+
+### Verification (2026-07-15)
+- `tsc --noEmit`: PASS (no errors).
+- `eslint .`: PASS (0 errors, 0 warnings — RHF/React-Compiler advisories resolved by moving
+  group_by + filter-op selects onto FormField controllers).
+- `next build` (Turbopack): PASS — routes: `/`, `/_not-found`, `/charts`, `/dashboards`,
+  `/dashboards/[id]` (dynamic). Static generation of 6 pages succeeded.
+- Runtime smoke (`next start`): `/`→307→/dashboards, `/dashboards` 200, `/charts` 200,
+  `/dashboards/:id` 200; SSR shell renders, no error boundary, server log clean.
+- Note: RTK proxy summarizes `next build`/`curl` output — use `rtk proxy <cmd>` and `node fetch`
+  to see raw results.
+
+---
+
+## 2026-07-15 — Session 2: QA / review fixes (must-fix #1–#5 + minor findings)
+
+Post-build review by qa-engineer + review-engineer. All must-fix items addressed; verification at end.
+
+### Must-fix
+1. **Widget chart lookup resolved by id, not by paginated list.** `dashboard-view.tsx` previously built
+   `chartsById` from `useCharts()` (generic `/api/charts` list, page 1, max 20) — any widget whose chart
+   sorted past page 1 was mislabeled "Unavailable chart" and lost its menu, even though the result data
+   rendered fine (the engine resolves by id). Fix: new `getChartsByIds(ids)` service resolver +
+   `useChartsByIds(ids)` hook (`queryKeys.charts.byIds`), keyed on the widget set. `WidgetCard` now takes
+   a resolved `chartName?: string` instead of a `ChartListItem`. Independent of chart volume/sort order.
+2. **"Only the two facades touch mock/" is now actually true.** Moved `ApiError` to `src/lib/api-error.ts`
+   (non-mock) — imported by `lib/errors.ts`, `providers/query-provider.tsx`, and both facades; `mock/network.ts`
+   imports it too. `lib/session.ts` is now standalone (owns `CURRENT_USER_ID`); `mock/config.ts` sources
+   `MOCK_PRINCIPAL` FROM `lib/session` (reverse dep — deleting `mock/` can't break session). Verified by grep:
+   no non-mock/non-facade file imports `services/mock`, and `MOCK_PRINCIPAL` appears only in mock + the two facades.
+3. **localStorage persistence for the mock store** (previously in-memory only — created dashboards/layouts/forks
+   vanished on reload, silently undercutting the canonical-URL sharing bet). `mock/store.ts` gains
+   `persistStore()` / `hydrateStore()` over the durable record maps (not the ephemeral `runtime` cache);
+   `mock/network.ts` splits `withNetwork` into `withRead` (latency+fail) and `withWrite` (latency+fail then
+   write-through persist); every facade mutation now uses `withWrite`. `ensureSeeded` hydrates if present,
+   else seeds + persists. Key `cia-dashboards.mock.v1`; corrupt/absent payload falls back to seed; SSR no-ops.
+4. **Layout no longer marked dirty on widget add/remove.** `dashboard-grid.tsx` stopped dirtying on every
+   `onLayoutChange` (which fires on mount/add/remove too). It now commits layout ONLY on `onDragStop` /
+   `onResizeStop` (real user gestures) via a renamed `onCommitLayout` prop. `syncLayout` (see minor list)
+   re-baselines the draft after add/remove without touching `layoutDirty`.
+5. **Keyboard operability for the grid** (was mouse/touch-only). The widget drag handle (`widget-card.tsx`)
+   now handles Arrow keys = move 1 grid unit, Shift+Arrow = resize, via `onMove`/`onResize` callbacks that
+   clamp to grid bounds (`GRID_COLS`, `WIDGET_MIN_W/H`) in `dashboard-view.tsx` and mark a genuine edit. The
+   resize handle is replaced with an announced, focusable `role="button"` element (`resizeConfig.handleComponent`)
+   with an aria-label pointing to the Shift+Arrow path; handle gets a visible focus ring.
+   Trade-off flagged: keyboard *resize* is wired through the drag handle (Shift+Arrow), not the corner
+   handle itself — the corner handle is now announced/focusable but its own key events aren't bound (rgl owns it).
+   This gives full keyboard move+resize parity via one focus target; deep per-handle key binding is left to rgl.
+
+### Minor findings (all done)
+- `addWidget` now rejects a soft-deleted `chart_id` (parity with `chart.service` `requireChart`).
+- `syncLayout` wired: re-baselines draft on widget add/remove; changed to MERGE (keep unsaved draft positions
+  for surviving widgets, seed server position for new, drop removed) and to NOT reset `layoutDirty`, so an
+  add/remove never discards pending drags. Effect keyed on the widget-id set (doesn't fire on result polls).
+- `AddWidgetDialog.nextPosition` now computes from the live draft `positions` (passed down through
+  `DashboardEditBar`), not server-confirmed widgets — a new widget won't land on an unsaved dragged position.
+- `ChartPicker` search debounced with `useDebouncedValue(search, 250)` (parity with the two list pages).
+- Removed dead `"conflict"` value from `ApiErrorCode` (nothing threw/handled 409). A future backend adding
+  409 is a one-line enum change.
+- Two-step create-chart→add-widget flow: added a `TODO(real-backend)` comment flagging the orphan-on-partial-
+  failure seam (unreachable today since `WRITE_ERROR_RATE = 0`).
+- 320px overflow: dashboard header actions row changed from `shrink-0` to `flex-wrap justify-end` so buttons
+  wrap instead of overflowing at narrow widths.
+
+### Verification (2026-07-15, session 2)
+- `tsc --noEmit`: PASS · `eslint .`: PASS (0/0) · `next build` (Turbopack): PASS, all 5 routes.
+- Runtime smoke (`next start`): `/`→/dashboards, `/dashboards`, `/charts`, `/dashboards/:id` all 200; log clean.
+- Nothing from the must-fix or minor list was skipped.
+
+---
+
+## 2026-07-15 — Session 3: post-QA fixes (P1 data-integrity + P2–P4 cosmetics)
+
+Final QA/review pass confirmed Session 2's 5 must-fix + 7 minor items all working live, zero regressions.
+One real issue (P1) + three low-severity items remained.
+
+### P1 (must fix) — keyboard grid moves could persist overlapping positions
+Fix #4 intentionally unwired `onLayoutChange`, so react-grid-layout's own collision/compaction never
+feeds back into the Zustand draft. The keyboard handlers clamped to grid EDGES but not to other widgets'
+cells — RGL compacts visually, but "Save layout" persisted raw overlapping `{x,y,w,h}` (a real problem
+for Epic 3's planned backend no-overlap validation).
+- Fix: added `rectsOverlap()` + a `commitWidgetPosition()` guard in `dashboard-view.tsx`. `moveWidget`/
+  `resizeWidget` compute the target rect (edge-clamped as before) then commit ONLY if it doesn't overlap
+  any other widget's current draft position; otherwise the edit is rejected (position unchanged).
+- **Approach: rejection, not displacement.** Rationale: rejection is simpler and *cannot* yield a
+  still-overlapping persisted result (a displacement/push-down could cascade into new overlaps needing a
+  full compaction pass to get right). UX matches the existing edge-clamp behavior — the widget "hits a
+  wall" and stops. The check lives entirely in the keyboard commit path; `onLayoutChange` was NOT
+  re-wired, so fix #4's add/remove-not-dirty behavior is preserved.
+
+### Low-severity
+- **P2** — "Unavailable chart" title no longer flashes while `useChartsByIds` is pending. `WidgetCard`
+  takes `chartNamePending`; when there's no resolved name yet, the widget-result state isn't
+  `chart_unavailable`, and the lookup is still pending, it renders a title Skeleton instead of the
+  false-negative label. A genuinely deleted chart (result state `chart_unavailable`) still labels
+  immediately.
+- **P3** — `AccessibleResizeHandle` was a focusable `role="button"` with no key handler = dead-end Tab
+  stop. Made it pointer-only (`aria-hidden`, out of tab order). Keyboard resize is fully covered by the
+  drag handle's Shift+Arrow (whose aria-label announces it), so nothing is lost for AT users. This
+  supersedes Session 2's "announce the resize handle" note — a labeled-but-inert focus stop was worse
+  than delegating to the one working keyboard target.
+- **P4** — added a KNOWN GAP comment to `hydrateStore()`: validation is shape-only (top-level
+  `Array.isArray`), migration is just the `.v1` key suffix. Documented the "bump to .v2 / add per-record
+  validate+migrate" path for future schema changes; real schema evolution belongs to cia-backend/Datomic.
+- **Skipped (optional):** ~1s transient layout-scale flash at 320px on cold load before
+  `useContainerWidth()`'s ResizeObserver settles. Cosmetic only and not a quick fix (inherent to the
+  measure-then-mount pattern); would need a measured-before-mount gate that trades the flash for a blank
+  frame. Left as-is.
+
+### Verification (2026-07-15, session 3)
+- `tsc --noEmit`: PASS · `eslint .`: PASS (0/0) · `next build` (Turbopack): PASS, all 5 routes.
+
+---
+
+## 2026-07-15 — Session 4: Y-move compaction bug + first unit-test suite
+
+Fourth QA pass confirmed all Session-3 fixes working, found one precisely-diagnosed bug.
+
+### Bug — keyboard Y-moves persisted a value that never rendered
+react-grid-layout v2 runs its vertical compactor on EVERY `layout` prop change, not just during a
+pointer drag. The mouse path is self-consistent (RGL computes the compacted value before calling
+`onDragStop`). The keyboard path computed positions OUTSIDE RGL (edge-clamp + overlap check) and fed
+them via the `layout` prop — RGL silently recompacted for display while the Zustand draft (and thus
+"Save layout") kept the raw, uncompacted value. Repro: on "Growth overview — LatAm", remove the bottom
+widget, Tab to the top-left widget's handle, ArrowDown → `localStorage` recorded `y:0→1` but the on-screen
+transform never moved. Scoped to Y (RGL's default compactor is vertical-only); X + resize unaffected.
+
+Fix: extracted the keyboard-commit logic into a pure module `src/lib/grid-layout.ts` and reconcile the
+accepted move with **RGL's own exported `verticalCompactor`** before persisting, so the draft is
+byte-for-byte what RGL renders. `computeKeyboardCommit(positions, id, target, cols)`:
+  1. reject (null) if `target` overlaps another widget — P1's rejection guard, unchanged;
+  2. else place `target` and run `verticalCompactor.compact(layout, cols)`;
+  3. if the compacted result equals the input → null (a no-op must not dirty the layout).
+`dashboard-view.tsx`'s `moveWidget`/`resizeWidget` now call `clampedMove`/`clampedResize` +
+`computeKeyboardCommit`. The Y-into-empty-space case now correctly collapses to a no-op (verified: the
+compactor pulls the widget straight back to its original row). **`onLayoutChange` stays unwired — fix #4
+is preserved** (confirmed by a store unit test, below). Chose RGL's real compactor over re-implementing
+its rule, so the two can't drift.
+
+### First unit-test suite — Vitest + React Testing Library
+Stack: `vitest` (v4, oxc transform — no `@vitejs/plugin-react`, whose Babel-8 peer conflicts with the
+Babel 7 shadcn pulls in), `jsdom`, `@testing-library/react` + `/dom`. Config: `vitest.config.ts`
+(jsdom env, `@` alias, `src/**/*.test.{ts,tsx}`). Scripts: `npm test` (`vitest run`), `npm run test:watch`.
+**37 tests / 5 files, all passing.** Coverage, prioritizing the logic that has actually broken:
+- `src/lib/grid-layout.test.ts` — `rectsOverlap` (edge-touching ≠ overlap), clamps, `collidesWithOthers`
+  (self-exclusion), and `computeKeyboardCommit`: accept-into-free-space, **reject-on-overlap**, and the
+  **Y-into-empty-space no-op REGRESSION test** for the bug just fixed, so it can't silently return.
+- `src/stores/dashboard-editor.store.test.ts` — pins **fix #4**: `setLayout` is the only dirtying action;
+  `syncLayout` (the add/remove path) never touches `layoutDirty`; `syncLayout` merge semantics (survivors
+  keep unsaved draft position, new widgets get server position, removed drop out).
+- `src/services/mock/store.test.ts` — `persistStore`/`hydrateStore` round-trip, runtime cache not
+  persisted, seed-fallback on absent/corrupt/wrong-shape payloads, SSR (`window` undefined) no-op.
+- `src/services/chart.service.test.ts` — `getChartsByIds`: dedup, missing ids omitted, soft-deleted
+  excluded, order-independent membership, mixed input (network mocked out for determinism).
+- `src/components/dashboard/widget-result-view.test.tsx` — RTL, one test per state in the exhaustive
+  switch (loading / network-error / ok / stale / chart_unavailable / filter_conflict / rate_limited /
+  forbidden); Recharts stubbed via `vi.mock`.
+
+Still untested (noted for a future pass, lower value/higher setup cost): the RGL-rendered grid wiring
+itself (`onDragStop`/`onResizeStop` → dirty) — jsdom lacks layout boxes RGL needs, so this stays on
+manual QA + the store-contract test above; full form flows (react-hook-form + zod); TanStack Query hooks.
+
+### Verification (2026-07-15, session 4)
+- `tsc --noEmit`: PASS (incl. test files) · `eslint .`: PASS (0/0, incl. tests) · `next build`: PASS, 5 routes.
+- `npm test`: PASS — 37 tests, 5 files.
+
+---
+
+## 2026-07-15 — Session 5: Dockerize for manual testing
+
+The frontend-engineer agent hit a session/rate limit mid-task before writing any Docker files, so this
+session was done directly rather than through the agent. Goal: let the user run the built app in a
+container and test it themselves, against the same mock/localStorage data flow as `next start` locally.
+
+### Decisions
+- **`output: "standalone"` added to `next.config.ts`.** Checked `node_modules/next/dist/docs` per the
+  project's own `AGENTS.md` warning before touching config — confirmed `output: "standalone"` and the
+  `PORT`/`HOSTNAME` env-var behavior are unchanged in Next 16.2.10 vs. what the doc describes. Produces
+  `.next/standalone/server.js` with only the traced files needed at runtime — no full `node_modules` in
+  the final image.
+- **Multi-stage `Dockerfile`** (`deps` → `builder` → `runner`, `node:22-alpine` throughout, matching the
+  host's Node 22): `deps` installs via `npm ci` (cached independently of source changes); `builder` runs
+  `next build`; `runner` copies only `public/`, `.next/standalone`, and `.next/static`, runs as a
+  non-root `nextjs` user, listens on `0.0.0.0:3000` via `PORT`/`HOSTNAME`.
+- **Production build only, no dev-mode container.** Per the task: the app is already verified production-
+  ready across 4 QA/review sessions — `next dev` in a container would only add overhead (bind mounts,
+  slower FS on non-Linux hosts) for a "come test what's already built" ask, not a live-editing workflow.
+- **`docker-compose.yml`** — one service, healthcheck hitting `/dashboards` (`< 500` = healthy).
+  **Host port mapped to 3100, not 3000** — 3000 was already bound by an unrelated project's container
+  on this machine (`tintim-waha-waha-1`); left that container untouched and remapped instead of
+  investigating/stopping someone else's service.
+- **`.dockerignore`** excludes `node_modules`, `.next`, `.git`, `work.log`, non-README markdown, env
+  files, `tsconfig.tsbuildinfo`.
+- **No backend, no volumes for data** — the mock service layer persists to the *browser's* `localStorage`
+  (Session 3), which is unaffected by containerization since it's client-side. Data created while testing
+  lives in whichever browser/profile the user tests from, not in the container — worth remembering if
+  results look inconsistent across browser sessions or incognito windows.
+
+### Verification
+Built and ran the container for real (not just confirmed `docker build` exits 0):
+- `docker compose up -d --build` → image built clean, `next build` inside the build succeeded (5 routes,
+  same output as the host build).
+- Smoke-tested against the running container: `GET /` → 307 (→ `/dashboards`, expected), `GET /dashboards`
+  → 200, `GET /charts` → 200, `GET /dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` (the seeded
+  "Onboarding funnel — Q2") → 200. Container log clean (`✓ Ready`), `docker compose ps` reports
+  `healthy`.
+
+### How to test
+```
+cd frontend
+docker compose up -d --build
+# open http://localhost:3100
+```
+`docker compose down` to stop. Rebuild after code changes with `docker compose up -d --build` again
+(no hot reload — this is the production build).
+
+---
+
+## 2026-07-16 — Session 5: Docker containerization
+
+The build is done and QA-clean; containerized it so the user can run it themselves.
+
+- **`next.config.ts`**: `output: "standalone"` — Next traces the needed files into `.next/standalone`
+  (incl. a minimal `server.js` + only the required `node_modules`), so the runtime image doesn't ship
+  the full dependency tree.
+- **`Dockerfile`** (multi-stage, `node:22-alpine`): `deps` (npm ci, cached) → `builder` (`npm run build`)
+  → `runner`. Runner copies only `public`, `.next/standalone`, and `.next/static`; runs as a non-root
+  user (`nextjs:nodejs`, uid 1001); `EXPOSE 3000`, `PORT`/`HOSTNAME` env; `CMD ["node","server.js"]`.
+- **`docker-compose.yml`**: single service, host **3100** → container **3000**, `restart`-friendly, plus a
+  healthcheck (`node http.get /dashboards`, status < 500). One-command start.
+- **`.dockerignore`**: excludes `node_modules`, `.next`, `.git`, `work.log`, coverage, `.env*`, and the
+  test suite (`**/*.test.ts[x]`, `vitest.config.ts`) from the build context. Keeps `README.md`.
+- **`README.md`**: replaced the create-next-app boilerplate with real run instructions (the Docker
+  commands + host port 3100) and a prominent **localStorage note** — the mock persists to the browser's
+  `localStorage` (`cia-dashboards.mock.v1`), so "your" data is per-browser-profile and unaffected by
+  container restarts; a fresh browser / incognito starts from seed. Documented how to reset.
+
+**Verified live (not just `docker build`):** `docker compose up -d --build` → container reports
+`Up (healthy)`; smoke test on host **:3100** → `/` 307→`/dashboards`, `/dashboards` 200, `/charts` 200,
+`/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` 200; HTML renders real content (title "Dashboards ·
+CIA", no error boundary); container process runs as `nextjs` (non-root); image ~307MB.
+
+Start command for the user: `docker compose up -d --build` (from `frontend/`), then open http://localhost:3100.
+
+## 2026-07-16 — Session 6: mock filters now actually reshape chart numbers
+
+**Bug (found by the user testing the Docker build):** `buildSeries()` in `result-engine.ts` only used
+`filters.date_range.preset` to shape the data. `filters.platform` / `filters.app_version_min` were never
+referenced; `filters.country` was only read by `hasFilterConflict()` (a binary ok↔filter_conflict flip
+for one demo widget). So changing platform/country/app-version visibly changed nothing on any normal
+widget — reading as "filters aren't dynamic," even though TanStack Query refetch was correctly wired
+(queryKey includes `filters`); it was recomputing against inputs that didn't affect the output.
+
+**Why 4 rounds of QA missed it:** QA exercised the `filter_conflict` binary flip (the one demo widget
+pinned to a conflicting country), not whether *other* widgets' actual numbers respond to filter changes —
+a narrower check than the real requirement.
+
+**Fix** (`src/services/mock/result-engine.ts`): all four filter dimensions now influence output.
+- `filterKey(filters)` — a stable, order-independent (`platform` sorted) seed fragment covering
+  date_range + platform + country + app_version_min, folded into the PRNG seed → each distinct filter
+  combination gets its own curve shape, not just a rescale.
+- `filterScale(filters)` — a magnitude multiplier mirroring a WHERE-narrowed Pinot query returning
+  *less* volume: empty platform = all (×1), each selected platform ≈ ×0.55; a single country takes its
+  rough share (`COUNTRY_SHARE`, br .45/mx .25/us .18/co .12); a non-null `app_version_min` trims via
+  `appVersionScale` (deterministic from the version string, always in 0.55–0.90). So narrowing plausibly
+  lowers totals, deterministically. `hasFilterConflict` left untouched (distinct intentional mechanic).
+- `buildSeries` exported for unit testing.
+
+**Tests** (`src/services/mock/result-engine.test.ts`, 8 new): determinism (same filters → same numbers);
+platform / country / app_version_min changes each change the numbers; platform order-independence;
+and three "narrowing reduces magnitude" directional checks (single platform / one country / version floor
+each total less than unfiltered).
+
+### Verification (2026-07-16, sessions 5+6)
+- `tsc --noEmit`: PASS · `eslint .`: PASS (0/0) · `next build`: PASS · `npm test`: PASS — **45 tests, 6 files**.
+- Docker image rebuilt with the fix (`docker compose up -d --build`): container `Up (healthy)`, all 4
+  smoke-test routes serve on host :3100.
+
+---
+
+## 2026-07-16 — Session 7: series labels now respect the active filter
+
+**Bug (found by the user testing the Docker build, same file as Session 6):** `seriesLabels()` chose the
+rendered series/legend lines purely from the chart's `group_by` dimension, ignoring `filters` entirely.
+So a country-grouped chart always drew Brazil/Mexico/Colombia lines regardless of `filters.country`, and
+a platform-grouped chart always drew both iOS and Android. Real-backend equivalent: Pinot applies the
+WHERE filter BEFORE grouping, so groups outside the filter never come back — the frontend should never
+render series for filtered-out dimension values. (Distinct from Session 6, which fixed the *magnitude/
+shape* of each series; this is about *which* series exist.)
+
+Also fixed alongside: the `"country"` label set only listed three countries — `"us"` (United States) was
+missing, so filtering a country-grouped chart to the US produced no matching series at all.
+
+**Fix** (`src/services/mock/result-engine.ts`): `seriesLabels(chart, filters)` now narrows the label set:
+- `group_by "country"` → single country's label when `filters.country` is set; all **four** (br/mx/co/us,
+  fixing the missing US) when unset.
+- `group_by "platform"` → only selected platforms (mapped ios→iOS / android→Android), canonical order
+  preserved and order-independent; both when the platform filter is empty.
+- `group_by "app_version"` → only labels `>= filters.app_version_min` (numeric `compareVersions`); all
+  when no floor.
+- `default` → unchanged single "Total" line.
+`buildSeries` passes `filters` through. `hasFilterConflict` and Session 6's `filterKey`/`filterScale`
+untouched (orthogonal concerns).
+
+Concrete example: a country-grouped chart with `country=br` now returns exactly one series — **Brazil** —
+instead of all three (now four) countries.
+
+**Tests** (`result-engine.test.ts`, +9): country filter → one matching series; `country=us` → United
+States (the previously-missing case); unfiltered country → all four; one platform → one series; no
+platform filter → both in canonical order; platform order-independence; `app_version_min` excludes older
+labels; no floor → all versions; and default → single Total regardless of filters.
+
+### Verification (2026-07-16, session 7)
+- `tsc --noEmit`: PASS · `eslint .`: PASS (0/0) · `next build`: PASS · `npm test`: PASS — **54 tests, 6 files**.
+- Docker image rebuilt (`docker compose up -d --build`): container `Up (healthy)`; smoke test on host
+  :3100 → `/` 307, `/dashboards` 200, `/charts` 200, `/dashboards/:seededId` 200.
