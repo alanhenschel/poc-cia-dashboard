@@ -31,5 +31,8 @@ export function useChartsByIds(ids: string[]) {
     queryKey: queryKeys.charts.byIds(sortedIds),
     queryFn: () => getChartsByIds(sortedIds),
     enabled: sortedIds.length > 0,
+    // Keep prior resolved names on-screen when the id set changes (widget add/remove) so `isPending`
+    // doesn't flip true for every widget and flash all titles to skeletons.
+    placeholderData: (previous) => previous,
   });
 }

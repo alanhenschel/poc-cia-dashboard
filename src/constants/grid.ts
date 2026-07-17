@@ -19,5 +19,12 @@ export const DEFAULT_WIDGET_SIZE: Pick<WidgetPosition, "w" | "h"> = {
   h: 4,
 };
 
+/** Full default position — last-resort fallback when a widget's position can't be resolved. */
+export const DEFAULT_WIDGET_POSITION: WidgetPosition = {
+  x: 0,
+  y: 0,
+  ...DEFAULT_WIDGET_SIZE,
+};
+
 /** CSS selector react-grid-layout uses to know which element starts a drag (edit mode only). */
 export const WIDGET_DRAG_HANDLE_CLASS = "widget-drag-handle";

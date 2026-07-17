@@ -580,3 +580,84 @@ routes 200 on :3100. Committed + pushed to origin/main (no Vercel deploy — exp
 ### Part 2 — architecture review + improvement plan
 Written up in `ARCHITECTURE.md` at the project root (plan only; NOT executed — awaiting go-ahead per
 instruction). See that file.
+
+---
+
+## 2026-07-16 — Session 11: implement A1–A3 + B1, broaden test coverage (C3)
+
+Approved items from ARCHITECTURE.md, implemented in two verified chunks.
+
+### Chunk 1 — small fixes (A1–A3, B1)
+- **A1:** removed the dead `@testing-library/jest-dom` dev dependency (never imported; tests use
+  `toBeTruthy`/`toBeNull`/`getByText`).
+- **A2:** added `placeholderData: (prev) => prev` to `useChartsByIds` — the id set changing on widget
+  add/remove no longer flips every existing title to a skeleton. Follow-up review caught the edge case
+  this introduced: a newly added widget whose chart id was absent from the placeholder data could briefly
+  render "Unavailable chart." `DashboardView` now computes `chartNamePending` per widget from
+  `!chartName && (isPending || isFetching || isPlaceholderData)`, so existing names stay visible while
+  newly unresolved ids still show the title skeleton until the by-id query settles.
+- **A3:** added `DEFAULT_WIDGET_POSITION` to `constants/grid.ts` (built on `DEFAULT_WIDGET_SIZE`) and used
+  it in `dashboard-view.tsx`'s `positionOf` fallback, replacing the hardcoded `{x:0,y:0,w:6,h:4}`.
+- **B1:** one-line comment in `grid-layout.ts`'s `reconcileWithCompaction` explaining bounds are already
+  guaranteed (target is edge-clamped before compaction; vertical compactor only moves items up; RGL's
+  `correctBounds` isn't a public export anyway). No logic change.
+
+### Chunk 2 — broadened unit tests (C3): 54 → 103 tests, 6 → 13 files
+New test files under `tests/` (mirrored structure, `@/` alias imports):
+- `tests/services/mock/pagination.test.ts` — DESC sort, cursor walk (no gaps/dupes), default/max page
+  size, unrecognized-cursor fallback.
+- `tests/lib/schemas/{filters,dashboard,chart}.schema.test.ts` — zod validation for every form/filter
+  schema (semver app-version, enums, name/tag limits, query-definition + nested filter validation).
+- `tests/services/dashboard.service.test.ts` — full facade: list/get/create/update/delete + widget
+  add/update/delete/batch-layout + `getDashboardResults`, **owner-only authorization** (403 on non-owned
+  mutate/delete/add; 422 on soft-deleted chart; 404 on unknown id/widget), and an explicit assertion that
+  every mutation goes through `withWrite` rather than `withRead`.
+- `tests/services/chart.service.test.ts` — extended beyond `getChartsByIds` to list (excludes
+  soft-deleted)/get/create/update/**soft-delete**/**fork-on-edit copy** + owner-only auth (no admin bypass),
+  plus the same `withWrite`/`withRead` boundary assertion for chart mutations.
+- `tests/hooks/use-debounced-value.test.ts` — fake-timer debounce behavior (initial, delayed commit,
+  rapid-change collapse).
+- `tests/hooks/use-dashboards.test.tsx` — query + mutation hook wiring through a `QueryClientProvider`.
+
+**Test-harness note:** the facade/hook tests mock `@/services/mock/network` with **async** pass-throughs
+(`async (op) => op()`), not `Promise.resolve(op())` — the real `withRead`/`withWrite` are async, so a
+synchronous `throw` inside `op` must surface as a *rejected promise* for `.rejects` assertions to work;
+a sync mock let the throw escape at the call site. The facade tests use `vi.fn` wrappers for those
+pass-throughs so they also protect the read/write persistence boundary.
+
+### Verification
+`tsc --noEmit` PASS · `eslint .` PASS (0/0) · `next build` PASS · `npm test` **103 tests / 13 files PASS**
+(after each chunk / follow-up fix). Docker was not rebuilt in the resumed pass; changes are local and
+not committed/pushed yet. No Vercel deploy (standing explicit-deploy-only rule).
+
+`ARCHITECTURE.md` status updated: A1–A3/B1/C3 marked done with the final test count; C1/C2 + Section-4
+backend stubs remain proposals.
+
+---
+
+## 2026-07-17 — Session 12: frontend-engineer review + Docker refresh for testing
+
+User asked to use the `frontend-engineer` agent to confirm the Session-11 changes were OK, then ensure
+Docker was updated for manual testing.
+
+### Review result
+`frontend-engineer` found **no blocking findings**. Confirmed the current local changes match Session 11:
+A1–A3, B1, C3, the A2 per-widget pending follow-up, and the service `withWrite`/`withRead` boundary tests.
+One doc nuance was noted: Session 11 correctly said Docker had not been rebuilt yet.
+
+### Verification
+- `tsc --noEmit`: PASS.
+- `eslint .`: PASS.
+- `npm test`: PASS — 103 tests / 13 files.
+- `next build`: PASS.
+
+### Docker
+Rebuilt and restarted with `docker compose up -d --build`. The image build ran `next build` successfully
+inside Docker, recreated `frontend-frontend-1`, and the container is **Up (healthy)** on host port 3100.
+Smoke checks:
+- `/` → 307 to `/dashboards`.
+- `/dashboards` → 200.
+- `/charts` → 200.
+- `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` → 200.
+
+Ready for manual testing at http://localhost:3100.

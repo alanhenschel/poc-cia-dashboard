@@ -75,6 +75,10 @@ export function reconcileWithCompaction(
     i: id,
     ...(id === widgetId ? target : pos),
   }));
+  // No bounds-correction pass is needed here: `target` is already edge-clamped by
+  // clampedMove/clampedResize (x,w within [0, cols]), and the vertical compactor only moves items
+  // UP — it never changes x/w — so every item stays in bounds. (RGL's own `correctBounds` is internal
+  // and not exported, so it couldn't be called even if it were needed.)
   const compacted = verticalCompactor.compact(proposed, cols);
   const result: PositionMap = {};
   for (const item of compacted) {

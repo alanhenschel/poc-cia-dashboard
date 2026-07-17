@@ -6,7 +6,12 @@ import { useEffect, useMemo } from "react";
 import { EmptyState } from "@/components/common/empty-state";
 import { ErrorState } from "@/components/common/error-state";
 import { Button } from "@/components/ui/button";
-import { GRID_COLS, WIDGET_MIN_H, WIDGET_MIN_W } from "@/constants/grid";
+import {
+  DEFAULT_WIDGET_POSITION,
+  GRID_COLS,
+  WIDGET_MIN_H,
+  WIDGET_MIN_W,
+} from "@/constants/grid";
 import { useChartsByIds } from "@/hooks/use-charts";
 import { useDashboard } from "@/hooks/use-dashboards";
 import { useDashboardResults } from "@/hooks/use-dashboard-results";
@@ -109,7 +114,8 @@ export function DashboardView({ id }: { id: string }) {
 
   const positionOf = (widgetId: string): WidgetPosition =>
     layout[widgetId] ??
-    dashboard.widgets.find((w) => w.id === widgetId)?.position ?? { x: 0, y: 0, w: 6, h: 4 };
+    dashboard.widgets.find((w) => w.id === widgetId)?.position ??
+    DEFAULT_WIDGET_POSITION;
 
   const allPositions = (): PositionMap =>
     Object.fromEntries(dashboard.widgets.map((w) => [w.id, positionOf(w.id)]));
@@ -199,23 +205,30 @@ export function DashboardView({ id }: { id: string }) {
           layout={layout}
           editMode={editMode}
           onCommitLayout={(next) => editor.setLayout(next)}
-          renderWidget={(widget) => (
-            <WidgetCard
-              widget={widget}
-              chartName={chartNameById.get(widget.chart_id)}
-              chartNamePending={chartsQuery.isPending}
-              result={resultsByWidget.get(widget.id)}
-              isLoading={resultsQuery.isPending}
-              error={resultsQuery.error}
-              editMode={editMode}
-              copyPending={copyChart.isPending}
-              onRetry={() => resultsQuery.refetch()}
-              onRemove={() => deleteWidget.mutate(widget.id)}
-              onCopyChart={(chartId) => copyChart.mutate(chartId)}
-              onMove={(dx, dy) => moveWidget(widget.id, dx, dy)}
-              onResize={(dw, dh) => resizeWidget(widget.id, dw, dh)}
-            />
-          )}
+          renderWidget={(widget) => {
+            const chartName = chartNameById.get(widget.chart_id);
+            const chartNamePending =
+              !chartName &&
+              (chartsQuery.isPending || chartsQuery.isFetching || chartsQuery.isPlaceholderData);
+
+            return (
+              <WidgetCard
+                widget={widget}
+                chartName={chartName}
+                chartNamePending={chartNamePending}
+                result={resultsByWidget.get(widget.id)}
+                isLoading={resultsQuery.isPending}
+                error={resultsQuery.error}
+                editMode={editMode}
+                copyPending={copyChart.isPending}
+                onRetry={() => resultsQuery.refetch()}
+                onRemove={() => deleteWidget.mutate(widget.id)}
+                onCopyChart={(chartId) => copyChart.mutate(chartId)}
+                onMove={(dx, dy) => moveWidget(widget.id, dx, dy)}
+                onResize={(dw, dh) => resizeWidget(widget.id, dw, dh)}
+              />
+            );
+          }}
         />
       )}
     </div>
