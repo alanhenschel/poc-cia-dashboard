@@ -685,3 +685,12 @@ User requested committing and pushing the frontend changes using the configured 
 - `/dashboards` → 200.
 - `/charts` → 200.
 - `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` → 200.
+
+### Alias correction
+The intended stable production URL is https://frontend-lake-ten-46.vercel.app. The first production
+deploy in this session updated Vercel's default generated alias but left `frontend-lake-ten-46` pointing
+at the prior deployment (`frontend-9sm55e6ey...`). Corrected with:
+`vercel alias set frontend-14surznpy-ahenschel-6421s-projects.vercel.app frontend-lake-ten-46.vercel.app`.
+Verified aliases now show `frontend-lake-ten-46.vercel.app` pointing at the final deployment
+`frontend-14surznpy-ahenschel-6421s-projects.vercel.app`; smoke checks on the stable URL pass (`/` 307,
+`/dashboards` 200, `/charts` 200).
