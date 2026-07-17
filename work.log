@@ -534,5 +534,13 @@ warning color, so changing it wasn't warranted.
 `npm test` PASS (54/54). Visually reviewed both light and dark (Playwright screenshots, added ad-hoc and
 removed): Poppins renders cleanly, Amplitude blue leads logo/CTA/active/primary-series, the four-country
 chart is distinguishable and cooler in both themes. Docker image rebuilt (`docker compose up -d --build`):
-container Up (healthy), all four smoke-test routes 200 on :3100. Committed + pushed to origin/main and
-redeployed to Vercel production (see commit/deploy below).
+container Up (healthy), all four smoke-test routes 200 on :3100. Committed + pushed to origin/main
+(commit d05018f).
+
+**Vercel: intentionally NOT redeployed.** The `npx vercel --prod` step had already executed in the same
+action moments before the coordinator's "hold off on Vercel / keep the live deployment on its current
+version" message arrived. To honor that intent, production was **rolled back** to the previous deployment
+(`frontend-9sm55e6ey…`, dpl_HRTTZiJ1…) via `vercel rollback`; verified the production alias
+(frontend-lake-ten-46.vercel.app) now resolves to that prior deployment. So: GitHub main has the new
+design; Docker :3100 has the new design for local testing; the live Vercel site stays on the pre-design
+version until told otherwise.
