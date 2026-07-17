@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-poppins);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-poppins);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -55,18 +55,20 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Amplitude Blue leads for CTAs/links/active state; text + chrome stay black/white/gray. */
+  --primary: #1e61f0;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* One secondary accent (Amplitude Red) reserved for a single semantic purpose: destructive. */
+  --destructive: #f23845;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #1e61f0;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -90,18 +92,19 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  /* Brighter Amplitude blue for the dark surface; white button text still clears AA (4.7:1). */
+  --primary: #2c6bf0;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --destructive: #ff5a5f;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #427ff7;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -118,26 +121,34 @@
 }
 
 /*
- * Categorical chart-series palette (dataviz skill, validated reference palette).
- * Line/area/bar series read these by role; identity is never color-alone (legend + tooltip present).
- * Dark column is the same eight hues re-stepped for the dark surface, not an auto-flip.
+ * Categorical chart-series palette — Amplitude-flavored: BLUE-FORWARD (slot 1 = Amplitude Blue, to
+ * "reinforce authorship"), cooler and less rainbow than the generic default, using Amplitude's own
+ * accent family (Violet, Pink) plus the warm/cool anchors (amber, teal) that CVD separation requires,
+ * and a cool slate as the gray-forward tertiary series.
+ *
+ * Validated with the dataviz skill's script against THIS app's real surfaces (light #ffffff, dark
+ * #171717): both modes PASS lightness band, chroma floor, adjacent CVD ΔE, and normal-vision floor.
+ * (A literal gray series is impossible under the chroma floor, so slot 6 is a cool slate at the
+ * minimum passing chroma; gray's primary chart role is chrome/axes/ink per Amplitude's guidance.)
+ * Contrast WARNs on the lighter warm hues are relieved by the always-present legend + tooltip.
+ * Identity is never color-alone. Dark steps are re-stepped for the dark surface, not auto-flipped.
  */
 :root {
-  --viz-series-1: #2a78d6; /* blue */
-  --viz-series-2: #008300; /* green */
-  --viz-series-3: #e87ba4; /* magenta */
-  --viz-series-4: #eda100; /* yellow */
-  --viz-series-5: #1baf7a; /* aqua */
-  --viz-series-6: #eb6834; /* orange */
+  --viz-series-1: #1e61f0; /* Amplitude Blue */
+  --viz-series-2: #e8a317; /* amber */
+  --viz-series-3: #12b5a6; /* teal */
+  --viz-series-4: #a373ff; /* Amplitude Violet */
+  --viz-series-5: #ff7d78; /* Amplitude Pink */
+  --viz-series-6: #4772b1; /* cool slate (gray-forward) */
 }
 
 .dark {
-  --viz-series-1: #3987e5;
-  --viz-series-2: #008300;
-  --viz-series-3: #d55181;
-  --viz-series-4: #c98500;
-  --viz-series-5: #199e70;
-  --viz-series-6: #d95926;
+  --viz-series-1: #427ff7;
+  --viz-series-2: #c88100;
+  --viz-series-3: #00a48c;
+  --viz-series-4: #9c72de;
+  --viz-series-5: #d66363;
+  --viz-series-6: #4881cc;
 }
 
 @layer base {

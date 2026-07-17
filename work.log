@@ -451,3 +451,88 @@ Smoke-tested identically to the Docker checks (Sessions 5-7): `/` → 307 (→ `
 → 200, `/charts` → 200, `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` (seeded "Onboarding funnel —
 Q2") → 200. Password protection is a manual dashboard step the user completes separately (plan/billing-
 tier dependent) — not re-verified here.
+
+---
+
+## 2026-07-16 — Session 8: "cannot resize widget" — root cause + fix (RESOLVED)
+
+User reported mouse-resize not working in edit mode. Drove a real browser (Playwright/Chromium) against
+the container on :3100 to observe actual behavior rather than guess.
+
+**Root cause: the resize handle was functional but visually invisible — a discoverability failure, not a
+broken interaction.** Findings from live driving:
+- The handle IS present, hit-testable (top element at the SE corner is the handle span), and resize
+  works: dragging it grew a widget 816×336 → 1024×512 and shrank it back, and the new size **persisted**
+  to `localStorage` (`w-pay-1` saved as `w10 h6`) and survived reload. (An early probe falsely showed
+  "not persisted" — that was a probe bug: `addInitScript(localStorage.clear)` re-ran on every reload and
+  wiped the save. Corrected probe confirmed persistence.)
+- The only visual was RGL's vendor `::after` triangle: 5px, hardcoded `rgba(0,0,0,0.4)`, at `opacity:0`
+  until hover. **Invisible on a dark card, barely visible on light.** Screenshots confirmed: no grabbable
+  affordance visible in edit mode (dark), a near-invisible speck (light). So users couldn't find where to
+  grab and concluded resize was broken.
+- This traces to the Session-3 P3 change (handle made `aria-hidden`, its visual left to the faint vendor
+  default) plus the `opacity:0 / hover:0.6` rules in globals.css.
+
+**Fix** (`src/app/globals.css`, CSS-only): made the resize handle a clear, theme-aware, always-visible
+corner affordance (it only renders in edit mode — RGL sets `display:none` otherwise). The `::after`
+chevron now uses `var(--muted-foreground)` (→ near-white on dark, near-black on light) at full opacity,
+8px, with `var(--foreground)` + an `--accent` background wash on hover. No component/logic changes.
+
+**Verification (live):** grow, shrink, AND save→reload persistence all confirmed working in **both light
+and dark** (Playwright), handle `::after` color resolves theme-appropriately (lab 2.75 light / 98.26 dark),
+screenshot shows a visible chevron on the dark card. Confirmed the compiled CSS ships in the container's
+served assets (`--muted-foreground` present in the `.react-resizable-handle` rules on :3100).
+
+**Not unit-tested — and why:** this is purely a CSS/rendering/discoverability issue (the underlying
+resize logic already works and is covered by the Session-2/3/4 grid tests). There is no logic branch to
+assert; the correct verification is visual/interaction, done via the browser driving above. Playwright was
+added ad-hoc for this investigation and removed afterward (not a committed dependency).
+
+---
+
+## 2026-07-16 — Session 9: design pass — Amplitude-aligned typography, color, chart palette
+
+Token/styling-level restyle toward Amplitude's actual product design (per their public brand guide,
+brand.amplitude.com). Scope was tokens + fonts + chart palette ONLY — no component/layout/interaction
+changes (the app has been through 8 sessions of QA/review).
+
+**Typography — switched Geist → Poppins.** Amplitude's brand typeface is Gellix (geometric sans, not
+free); their OWN documented web substitute is **Poppins** (Google Fonts). Geist was Vercel's scaffold
+default and off-brand. `layout.tsx` now loads Poppins (`--font-poppins`, weights 400/500/600/700) as the
+sans; `@theme` maps `--font-sans`/`--font-heading` to it. Kept Geist Mono for tabular-numeric spots only
+(not part of Amplitude's system). Weight usage already matches Amplitude's (SemiBold titles via the
+existing `font-semibold` headings, Regular body, Bold only on the logo mark). **Font decision: Poppins was
+kept** — verified running in both themes on a data-dense dashboard; it reads clean/geometric and
+professional, not too rounded/friendly, so no need to fall back to Plus Jakarta Sans.
+
+**Color tokens.** Amplitude leads with Blue + Black/White, gray for hierarchy, blue reserved for
+CTAs/links/active (not body text/chrome). Set `--primary` to **Amplitude Blue** — light `#1e61f0`
+(white text 5.22:1 AA), dark `#2c6bf0` (4.70:1 AA); `--ring` to blue for focus. Text/foreground and the
+secondary/muted/accent chrome stay black/white/cool-gray (already neutral — matches Amplitude). One
+secondary accent used for a single semantic purpose: `--destructive` = **Amplitude Red** (`#f23845`
+light / `#ff5a5f` dark). No secondary accent used as general UI color.
+
+**Chart palette — reloaded the dataviz skill first, re-validated, kept the CVD/contrast guarantee.**
+Replaced the generic 6-hue rainbow with a blue-forward, cooler, Amplitude-flavored set: slot 1 =
+**Amplitude Blue** (leads, "reinforces authorship"), then amber + teal (the warm/cool anchors CVD
+separation requires), Amplitude **Violet** + **Pink**, and a cool **slate** as the gray-forward tertiary.
+Light `#1e61f0,#e8a317,#12b5a6,#a373ff,#ff7d78,#4772b1`; dark re-stepped for the `#171717` surface
+`#427ff7,#c88100,#00a48c,#9c72de,#d66363,#4881cc`. **Validated with the skill's script against this app's
+real surfaces (light #ffffff, dark #171717): both modes PASS lightness band, chroma floor, adjacent CVD
+ΔE, and normal-vision floor.** Documented trade-offs: (1) the dataviz chroma floor forbids a literal gray
+series, so the "gray" is a cool slate at the minimum passing chroma — gray's primary chart role is
+chrome/axes/ink per Amplitude; (2) slate sits at slot 6 not slot 2, because a gray-blue adjacent to the
+blue lead fails the normal-vision separation floor; (3) contrast WARNs on the lighter warm hues are
+relieved by the always-present legend + tooltip (identity never color-alone).
+
+**Left intentionally:** `widget-message.tsx` warning tone keeps its hardcoded amber
+(`text-amber-600 dark:text-amber-500`) — that's a semantic status color (filter-conflict / rate-limited),
+a universal convention, not brand chrome or an old-palette reference; Amplitude's facts don't specify a
+warning color, so changing it wasn't warranted.
+
+**Verification:** `tsc --noEmit` PASS · `eslint .` PASS (0/0) · `next build` PASS (Poppins fetched) ·
+`npm test` PASS (54/54). Visually reviewed both light and dark (Playwright screenshots, added ad-hoc and
+removed): Poppins renders cleanly, Amplitude blue leads logo/CTA/active/primary-series, the four-country
+chart is distinguishable and cooler in both themes. Docker image rebuilt (`docker compose up -d --build`):
+container Up (healthy), all four smoke-test routes 200 on :3100. Committed + pushed to origin/main and
+redeployed to Vercel production (see commit/deploy below).
