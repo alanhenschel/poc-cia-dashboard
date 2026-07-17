@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Dashboard, DashboardWidget } from "@/types";
-import { useDashboardEditorStore } from "./dashboard-editor.store";
+import { useDashboardEditorStore } from "@/stores/dashboard-editor.store";
 
 const widget = (id: string, x: number, y: number): DashboardWidget => ({
   id,

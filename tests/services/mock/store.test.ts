@@ -5,7 +5,7 @@ import {
   store,
   type ChartRecord,
   type DashboardRecord,
-} from "./store";
+} from "@/services/mock/store";
 
 const STORAGE_KEY = "cia-dashboards.mock.v1";
 

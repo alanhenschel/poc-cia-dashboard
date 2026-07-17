@@ -544,3 +544,39 @@ version" message arrived. To honor that intent, production was **rolled back** t
 (frontend-lake-ten-46.vercel.app) now resolves to that prior deployment. So: GitHub main has the new
 design; Docker :3100 has the new design for local testing; the live Vercel site stays on the pre-design
 version until told otherwise.
+
+---
+
+## 2026-07-16 — Session 10: move unit tests to top-level tests/ + architecture review
+
+(Interrupted by a session limit right after discovering test imports use same-dir relative paths, not
+the `@/` alias; resumed and completed.)
+
+### Part 1 — tests relocated `src/` → `tests/` (DONE)
+Moved all six test files (via `git mv`, history preserved) to a `tests/` directory that is a SIBLING of
+`src/` and mirrors its internal structure:
+- `src/lib/grid-layout.test.ts` → `tests/lib/grid-layout.test.ts`
+- `src/stores/dashboard-editor.store.test.ts` → `tests/stores/dashboard-editor.store.test.ts`
+- `src/services/chart.service.test.ts` → `tests/services/chart.service.test.ts`
+- `src/services/mock/store.test.ts` → `tests/services/mock/store.test.ts`
+- `src/services/mock/result-engine.test.ts` → `tests/services/mock/result-engine.test.ts`
+- `src/components/dashboard/widget-result-view.test.tsx` → `tests/components/dashboard/widget-result-view.test.tsx`
+
+**Import fix required (not just relocation):** every test imported its subject-under-test via a *same-dir
+relative* path (`./grid-layout`, `./store`, `./chart.service`, …), NOT the `@/` alias — so those broke on
+the move. Converted each to the `@/` alias (`@/lib/grid-layout`, `@/services/mock/store`, etc.), which
+resolves independent of the test's nesting depth. Other imports were already `@/…` or bare packages and
+needed no change. Test *content* was otherwise untouched.
+
+Config updates: `vitest.config.ts` include glob `src/**/*.test.{ts,tsx}` → `tests/**/*.test.{ts,tsx}`;
+`.dockerignore` now excludes the whole `tests/` dir (replacing the scattered `**/*.test.ts[x]` globs),
+plus `vitest.config.ts`. tsconfig `include` is root-relative (`**/*.ts[x]`) so `tests/` is still
+typechecked; eslint `.` still lints it.
+
+**Verified nothing lost:** `npm test` → 6 files / 54 tests pass (identical to before the move) ·
+`tsc --noEmit` PASS · `eslint .` PASS (0/0) · `next build` PASS · Docker rebuilt, container Up (healthy),
+routes 200 on :3100. Committed + pushed to origin/main (no Vercel deploy — explicit-deploy-only).
+
+### Part 2 — architecture review + improvement plan
+Written up in `ARCHITECTURE.md` at the project root (plan only; NOT executed — awaiting go-ahead per
+instruction). See that file.

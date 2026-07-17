@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardFilters } from "@/types";
-import { buildSeries } from "./result-engine";
-import type { ChartRecord } from "./store";
+import { buildSeries } from "@/services/mock/result-engine";
+import type { ChartRecord } from "@/services/mock/store";
 
 const chart: ChartRecord = {
   id: "chart-under-test",

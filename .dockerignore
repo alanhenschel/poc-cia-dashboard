@@ -10,6 +10,5 @@ npm-debug.log*
 .DS_Store
 tsconfig.tsbuildinfo
 # Test suite + tooling — not needed in the production image
-**/*.test.ts
-**/*.test.tsx
+tests
 vitest.config.ts

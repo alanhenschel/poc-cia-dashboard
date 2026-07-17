@@ -6,7 +6,7 @@ vi.mock("@/services/mock/network", () => ({
   withWrite: <T,>(op: () => T) => Promise.resolve(op()),
 }));
 
-import { getChartsByIds } from "./chart.service";
+import { getChartsByIds } from "@/services/chart.service";
 
 // Seeded ids (see mock/seed.ts).
 const SIGNUP = "018f5d92-1a4f-7c22-b8e1-2a9f0c4d51bb";

@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WidgetResult, WidgetResultData } from "@/types";
-import { WidgetResultView } from "./widget-result-view";
+import { WidgetResultView } from "@/components/dashboard/widget-result-view";
 
 // Stub the Recharts renderer — this suite tests the state SWITCH, not chart drawing (which needs a
 // real layout box jsdom doesn't provide).

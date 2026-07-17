@@ -7,7 +7,7 @@ import {
   positionsEqual,
   rectsOverlap,
   type PositionMap,
-} from "./grid-layout";
+} from "@/lib/grid-layout";
 
 const COLS = 12;
 
