@@ -661,3 +661,27 @@ Smoke checks:
 - `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` → 200.
 
 Ready for manual testing at http://localhost:3100.
+
+---
+
+## 2026-07-17 — Session 13: GitHub push + production Vercel deploy
+
+User requested committing and pushing the frontend changes using the configured user credentials, never a
+`codex` identity, then deploying production to Vercel.
+
+### Git
+- Verified commit author identity before committing: `alanhenschel <alan_henschel@hotmail.com>`.
+- Committed Session 11/12 changes as `6efe214` (`test: broaden frontend coverage and refresh docker notes`).
+- Pushed `main` to `origin` (`https://github.com/alanhenschel/poc-cia-dashboard.git`).
+
+### Vercel
+- Ran `vercel --prod --yes` against the linked project.
+- Production deployment succeeded: `dpl_GrRckmYeBagNmKcqetYwoQ8b2WFu`.
+- Production URL: https://frontend-7wu6fmpg0-ahenschel-6421s-projects.vercel.app
+- Production alias: https://frontend-ahenschel-6421s-projects.vercel.app
+
+### Smoke checks
+- `/` → 307 to `/dashboards`.
+- `/dashboards` → 200.
+- `/charts` → 200.
+- `/dashboards/018f5e4a-2c10-7a3b-9d40-3f1c8b9a2e77` → 200.
